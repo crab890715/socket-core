@@ -9,6 +9,28 @@ STEP_INIT = 0
 STEP_DESTROYED = -1
 
 BUF_SIZE = 32 * 1024
+
+
+class  SockManage(object):
+    sock_queue = {}
+    loop = eventloop.EventLoop()
+    @staticmethod
+    def add(sock):
+        pass
+
+
+class RemoteSock(object):
+    def __init__(self,ip,port):
+        addrs = socket.getaddrinfo(ip, port, 0, socket.SOCK_STREAM,
+                                   socket.SOL_TCP)
+        if len(addrs) == 0:
+            raise Exception("getaddrinfo failed for %s:%d" % (ip,  port))
+        af, socktype, proto, canonname, sa = addrs[0]
+        remote_sock = socket.socket(af, socktype, proto)
+        self._remote_sock = remote_sock
+        self._sock_queue[remote_sock.fileno()] = self
+        remote_sock.setblocking(False)
+        remote_sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
 class LocalSock(object):
     def __init__(self, sock, sock_queue, loop):
         self._sock_queue = sock_queue
