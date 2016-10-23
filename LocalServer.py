@@ -4,7 +4,7 @@ Created on 2016年10月22日
 
 @author: kingdee
 '''
-import eventloop, socket,errno,traceback
+import eventloop, socket,errno,traceback,logging
 STEP_INIT = 0
 STEP_DESTROYED = -1
 
@@ -12,13 +12,52 @@ BUF_SIZE = 32 * 1024
 
 
 class  SockManage(object):
-    sock_queue = {}
     loop = eventloop.EventLoop()
+    def __init__(self,ip,port):
+        addrs = socket.getaddrinfo(ip, port, 0,
+                                   socket.SOCK_STREAM, socket.SOL_TCP)
+        if len(addrs) == 0:
+            raise Exception("can't get addrinfo for %s:%d" %
+                            (ip, port))
+        af, socktype, proto, canonname, sa = addrs[0]
+        server_socket = socket.socket(af, socktype, proto)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind(sa)
+        server_socket.setblocking(False)
+        server_socket.listen(1024)
+        self.add({"sock":server_socket,"type":"server","callback":SockManage._handle_server_event})
+        self.loop.run()
+        pass
+    @staticmethod
+    def remove(sock):
+        SockManage.loop.remove(sock)
     @staticmethod
     def add(sock):
+        SockManage.loop.add(sock,eventloop.POLL_IN | eventloop.POLL_ERR)
         pass
-
-
+    @staticmethod
+    def _handle_server_event(sock, fd, event):
+        if event & eventloop.POLL_ERR:
+            raise Exception('server_socket error')
+        try:
+            conn = sock['sock'].accept()
+            conn[0].setblocking(False)
+            conn[0].setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+            SockManage.add({"sock":conn[0],"type":"sock","callback":SockManage._handle_sock_event})
+        except (OSError, IOError) as e:
+            logging.error(e)
+            traceback.print_exc()
+    @staticmethod
+    def _handle_sock_event(sock, fd, event):
+        data = None
+        if event & eventloop.POLL_ERR:
+            raise Exception('server_socket error')
+        try:
+            data = sock['sock'].recv(BUF_SIZE)
+            print data
+        except (OSError, IOError) as e:
+            logging.error(e)
+            traceback.print_exc()
 class RemoteSock(object):
     def __init__(self,ip,port):
         addrs = socket.getaddrinfo(ip, port, 0, socket.SOCK_STREAM,
@@ -186,10 +225,14 @@ class LocalServer(object):
                 else:
                     print 'poll removed fd'
 if __name__ == '__main__':
-    local_server = LocalServer()
-    loop = eventloop.EventLoop()
-    local_server.add_to_loop(loop)
-    loop.run()
+#     local_server = LocalServer()
+#     loop = eventloop.EventLoop()
+#     local_server.add_to_loop(loop)
+#     loop.run()
 #     print "\x05\00"
 #     print ord("\x05")
+    print errno.ETIMEDOUT, errno.EAGAIN, errno.EWOULDBLOCK
+    SockManage("127.0.0.1",1080)
+    a = {"a":1,"b":2,"c":3}
+    print a['a']
     pass

@@ -29,7 +29,7 @@ import os
 import socket
 import select
 import errno
-import logging
+import logging,traceback
 from collections import defaultdict
 
 
@@ -167,7 +167,6 @@ class EventLoop(object):
             raise Exception('can not find any available functions in select '
                             'package')
         self._fd_to_f = {}
-        self._handlers = []
         self.stopping = False
         logging.debug('using event model: %s', model)
 
@@ -176,24 +175,18 @@ class EventLoop(object):
         return [(self._fd_to_f[fd], fd, event) for fd, event in events]
 
     def add(self, f, mode):
-        fd = f.fileno()
+        fd = f['sock'].fileno()
         self._fd_to_f[fd] = f
         self._impl.add_fd(fd, mode)
 
     def remove(self, f):
-        fd = f.fileno()
+        fd = f['sock'].fileno()
         self._fd_to_f[fd] = None
         self._impl.remove_fd(fd)
 
     def modify(self, f, mode):
-        fd = f.fileno()
+        fd = f['sock'].fileno()
         self._impl.modify_fd(fd, mode)
-
-    def add_handler(self, handler):
-        self._handlers.append(handler)
-
-    def remove_handler(self, handler):
-        self._handlers.remove(handler)
 
     def run(self):
         while not self.stopping:
@@ -206,17 +199,17 @@ class EventLoop(object):
                     continue
                 else:
                     logging.error('poll:%s', e)
-                    import traceback
                     traceback.print_exc()
                     continue
-            for handler in self._handlers:
-                # TODO when there are a lot of handlers
-                try:
-                    handler(events)
-                except (OSError, IOError) as e:
-                    logging.error(e)
-                    import traceback
-                    traceback.print_exc()
+            for sock, fd, event in events:
+                print fd,sock['type'],len(self._fd_to_f)
+                if "callback" in sock and sock['callback']:
+                    try:
+                        sock['callback'](sock, fd, event)
+                    except (OSError, IOError) as e:
+                        logging.error(e)
+                        traceback.print_exc()
+            
 
 
 # from tornado
