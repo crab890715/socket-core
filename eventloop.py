@@ -175,17 +175,17 @@ class EventLoop(object):
         return [(self._fd_to_f[fd], fd, event) for fd, event in events]
 
     def add(self, f, mode):
-        fd = f['sock'].fileno()
+        fd = f.sock.fileno()
         self._fd_to_f[fd] = f
         self._impl.add_fd(fd, mode)
 
     def remove(self, f):
-        fd = f['sock'].fileno()
+        fd = f.sock.fileno()
         self._fd_to_f[fd] = None
         self._impl.remove_fd(fd)
 
     def modify(self, f, mode):
-        fd = f['sock'].fileno()
+        fd = f.sock.fileno()
         self._impl.modify_fd(fd, mode)
 
     def run(self):
@@ -202,13 +202,11 @@ class EventLoop(object):
                     traceback.print_exc()
                     continue
             for sock, fd, event in events:
-                print fd,sock['type'],len(self._fd_to_f)
-                if "callback" in sock and sock['callback']:
-                    try:
-                        sock['callback'](sock, fd, event)
-                    except (OSError, IOError) as e:
-                        logging.error(e)
-                        traceback.print_exc()
+                try:
+                    sock.handler(sock, fd, event)
+                except (OSError, IOError) as e:
+                    logging.error(e)
+                    traceback.print_exc()
             
 
 
@@ -235,3 +233,11 @@ def errno_from_exception(e):
 def get_sock_error(sock):
     error_number = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
     return socket.error(error_number, os.strerror(error_number))
+if __name__ == '__main__':
+    print POLL_ERR
+    print POLL_IN
+    print POLL_ERR | POLL_IN
+    print (POLL_ERR | POLL_IN) & POLL_IN
+    print (POLL_ERR | POLL_IN) & POLL_OUT
+    print (POLL_ERR | POLL_IN) & POLL_NVAL
+    print (POLL_ERR | POLL_IN) & POLL_ERR

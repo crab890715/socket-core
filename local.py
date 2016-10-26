@@ -10,6 +10,11 @@ STEP_DESTROYED = -1
 
 BUF_SIZE = 32 * 1024
 
+class SockHandler(object):
+    sock=None
+    sock_type=None
+    def handler(self,sock, fd, event):
+        pass
 
 class  SockManage(object):
     loop = eventloop.EventLoop()
@@ -20,10 +25,10 @@ class  SockManage(object):
     def remove(sock):
         SockManage.loop.remove(sock)
     @staticmethod
-    def add(sock):
-        SockManage.loop.add(sock,eventloop.POLL_IN | eventloop.POLL_ERR)
+    def add(sock,mode=eventloop.POLL_IN | eventloop.POLL_ERR):
+        SockManage.loop.add(sock,mode)
         pass
-class RemoteSock(object):
+class RemoteSock(SockHandler):
     def __init__(self,ip,port):
         addrs = socket.getaddrinfo(ip, port, 0, socket.SOCK_STREAM,
                                    socket.SOL_TCP)
@@ -31,28 +36,11 @@ class RemoteSock(object):
             raise Exception("getaddrinfo failed for %s:%d" % (ip,  port))
         af, socktype, proto, canonname, sa = addrs[0]
         remote_sock = socket.socket(af, socktype, proto)
-        self._remote_sock = remote_sock
-        self._sock_queue[remote_sock.fileno()] = self
         remote_sock.setblocking(False)
         remote_sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-class LocalSock(object):
-    def __init__(self, sock):
-        sock.setblocking(False)
-        sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-        SockManage.add({"sock":sock,"type":"sock","callback":self._handle_event})
-        pass
-    def _create_remote_socket(self, ip, port):
-        addrs = socket.getaddrinfo(ip, port, 0, socket.SOCK_STREAM,
-                                   socket.SOL_TCP)
-        if len(addrs) == 0:
-            raise Exception("getaddrinfo failed for %s:%d" % (ip,  port))
-        af, socktype, proto, canonname, sa = addrs[0]
-        remote_sock = socket.socket(af, socktype, proto)
-        self._remote_sock = remote_sock
-        self._sock_queue[remote_sock.fileno()] = self
-        remote_sock.setblocking(False)
-        remote_sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-        return remote_sock
+        self.sock = remote_sock
+        self.sock_type = "remote"
+        SockManage.add(self,eventloop.POLL_ERR | eventloop.POLL_OUT)
     def _on_remote_error(self):
         self.destroy()
         pass
@@ -61,15 +49,34 @@ class LocalSock(object):
         pass
     def _on_remote_write(self):
         pass
+    def handler(self,sock, fd, event):
+        if event & eventloop.POLL_ERR:
+            self._on_remote_error()
+            if self._step == STEP_DESTROYED:
+                return
+        if event & (eventloop.POLL_IN | eventloop.POLL_HUP):
+            self._on_remote_read()
+            if self._step == STEP_DESTROYED:
+                return
+        if event & eventloop.POLL_OUT:
+            self._on_remote_write()
+        else:
+            print 'unknown socket'
+class LocalSock(SockHandler):
+    def __init__(self, sock):
+        sock.setblocking(False)
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+        self.sock = sock
+        self.sock_type = "sock"
+        SockManage.add(self,eventloop.POLL_IN | eventloop.POLL_ERR)
+        pass
     def _on_local_error(self):
         self.destroy()
         pass
     def _on_local_read(self):
-        if not self._local_sock:
-            return
         data = None
         try:
-            data = self._local_sock.recv(BUF_SIZE)
+            data = self.sock.recv(BUF_SIZE)
         except (OSError, IOError) as e:
             if eventloop.errno_from_exception(e) in \
                     (errno.ETIMEDOUT, errno.EAGAIN, errno.EWOULDBLOCK):
@@ -82,7 +89,7 @@ class LocalSock(object):
         pass
     def _on_local_write(self):
         pass
-    def _handle_event(self, sock, event):
+    def handler(self,sock, fd, event):
         if event & eventloop.POLL_ERR:
             self._on_local_error()
             if self._step == STEP_DESTROYED:
@@ -115,7 +122,7 @@ class LocalSock(object):
                 self._local_sock = None
             except:
                 pass
-class LocalServer(object):
+class LocalServer(SockHandler):
     def __init__(self, ip, port):
         addrs = socket.getaddrinfo(ip, port, 0,
                                    socket.SOCK_STREAM, socket.SOL_TCP)
@@ -128,18 +135,18 @@ class LocalServer(object):
         server_socket.bind(sa)
         server_socket.setblocking(False)
         server_socket.listen(1024)
-        SockManage.add({"sock":server_socket,"type":"server","callback":self._handle_event})
+        self.sock = server_socket
+        self.sock_type = "server"
         pass
-    def _handle_event(self,sock, fd, event):
-        if sock['sock']:
-            if event & eventloop.POLL_ERR:
-                raise Exception('server_socket error')
-            try:
-                conn = sock['sock'].accept()
-                LocalSock(conn[0])
-            except (OSError, IOError) as e:
-                logging.error(e)
-                traceback.print_exc()
+    def handler(self,sock, fd, event):
+        if event & eventloop.POLL_ERR:
+            raise Exception('server_socket error')
+        try:
+            conn = self.sock.accept()
+            LocalSock(conn[0])
+        except (OSError, IOError) as e:
+            logging.error(e)
+            traceback.print_exc()
 if __name__ == '__main__':
 #     local_server = LocalServer()
 #     loop = eventloop.EventLoop()
@@ -147,7 +154,8 @@ if __name__ == '__main__':
 #     loop.run()
 #     print "\x05\00"
 #     print ord("\x05")
-    LocalServer()
+    
+    SockManage.add(LocalServer(),eventloop.POLL_IN | eventloop.POLL_ERR)
     SockManage.start()
     a = {"a":1,"b":2,"c":3}
     print a['a']
