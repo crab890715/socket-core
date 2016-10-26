@@ -29,7 +29,7 @@ class  SockManage(object):
         SockManage.loop.add(sock,mode)
         pass
 class RemoteSock(SockHandler):
-    def __init__(self,ip,port):
+    def __init__(self,ip,port,local_sock):
         addrs = socket.getaddrinfo(ip, port, 0, socket.SOCK_STREAM,
                                    socket.SOL_TCP)
         if len(addrs) == 0:
@@ -51,14 +51,13 @@ class RemoteSock(SockHandler):
         pass
     def handler(self,sock, fd, event):
         if event & eventloop.POLL_ERR:
+            print 1
             self._on_remote_error()
-            if self._step == STEP_DESTROYED:
-                return
         if event & (eventloop.POLL_IN | eventloop.POLL_HUP):
+            print 2
             self._on_remote_read()
-            if self._step == STEP_DESTROYED:
-                return
         if event & eventloop.POLL_OUT:
+            print 3
             self._on_remote_write()
         else:
             print 'unknown socket'
@@ -77,6 +76,7 @@ class LocalSock(SockHandler):
         data = None
         try:
             data = self.sock.recv(BUF_SIZE)
+            print data
         except (OSError, IOError) as e:
             if eventloop.errno_from_exception(e) in \
                     (errno.ETIMEDOUT, errno.EAGAIN, errno.EWOULDBLOCK):
@@ -84,44 +84,25 @@ class LocalSock(SockHandler):
         if not data:
             self.destroy()
             return
-        if self._step == STEP_INIT:
-            self._handle_stage_hello(data)
         pass
     def _on_local_write(self):
         pass
     def handler(self,sock, fd, event):
         if event & eventloop.POLL_ERR:
+            print "acbsddddd1"
             self._on_local_error()
-            if self._step == STEP_DESTROYED:
-                return
+            return
         if event & (eventloop.POLL_IN | eventloop.POLL_HUP):
+            print "acbsddddd2"
             self._on_local_read()
-            if self._step == STEP_DESTROYED:
-                return
+            return
         if event & eventloop.POLL_OUT:
+            print "acbsddddd3"
             self._on_local_write()
         else:
             print 'unknown socket'
     def destroy(self):
-        if self._stage == STEP_DESTROYED:
-            return
-        self._stage = STEP_DESTROYED
-        if self._remote_sock:
-            try:
-                self._loop.remove(self._remote_sock)
-                del self._sock_queue[self._remote_sock.fileno()]
-                self._remote_sock.close()
-                self._remote_sock = None
-            except:
-                pass
-        if self._local_sock:
-            try:
-                self._loop.remove(self._local_sock)
-                del self._sock_queue[self._local_sock.fileno()]
-                self._local_sock.close()
-                self._local_sock = None
-            except:
-                pass
+        pass
 class LocalServer(SockHandler):
     def __init__(self, ip, port):
         addrs = socket.getaddrinfo(ip, port, 0,
@@ -155,8 +136,6 @@ if __name__ == '__main__':
 #     print "\x05\00"
 #     print ord("\x05")
     
-    SockManage.add(LocalServer(),eventloop.POLL_IN | eventloop.POLL_ERR)
+    SockManage.add(LocalServer("127.0.0.1",1080),eventloop.POLL_IN | eventloop.POLL_ERR)
     SockManage.start()
-    a = {"a":1,"b":2,"c":3}
-    print a['a']
     pass
