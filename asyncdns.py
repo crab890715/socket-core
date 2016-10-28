@@ -368,10 +368,11 @@ class DNSResolver(eventloop.SockHandler):
             self.sock.setblocking(False)
             eventloop.SockManage.add(self, eventloop.POLL_IN)
         else:
-            data, addr = sock.recvfrom(1024)
+            data, addr = self.sock.recvfrom(1024)
             if addr[0] not in self._servers:
                 logging.warn('received a packet other than our dns')
-            self._handle_data(data)
+            if data:
+                self._handle_data(data)
         now = time.time()
         if now - self._last_time > CACHE_SWEEP_INTERVAL:
             self._cache.sweep()
