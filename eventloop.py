@@ -52,8 +52,6 @@ EVENT_NAMES = {
     POLL_HUP: 'POLL_HUP',
     POLL_NVAL: 'POLL_NVAL',
 }
-
-
 class EpollLoop(object):
 
     def __init__(self):
@@ -208,7 +206,26 @@ class EventLoop(object):
                     logging.error(e)
                     traceback.print_exc()
             
-
+class SockHandler(object):
+    sock = None
+    sock_type = None
+    def handler(self, sock, fd, event):
+        pass
+class  SockManage(object):
+    loop = EventLoop()
+    @staticmethod
+    def start():
+        SockManage.loop.run()
+    @staticmethod
+    def remove(sock):
+        SockManage.loop.remove(sock)
+    @staticmethod
+    def add(sock, mode=POLL_IN | POLL_ERR):
+        SockManage.loop.add(sock, mode)
+        pass
+    @staticmethod
+    def modify(sock, mode=POLL_IN | POLL_ERR):
+        SockManage.loop.modify(sock, mode)
 
 # from tornado
 def errno_from_exception(e):

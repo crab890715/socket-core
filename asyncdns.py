@@ -259,10 +259,9 @@ STATUS_IPV4 = 0
 STATUS_IPV6 = 1
 
 
-class DNSResolver(object):
-
+class DNSResolver(eventloop.SockHandler):
+    _instance = None
     def __init__(self):
-        self._loop = None
         self._request_id = 1
         self._hosts = {}
         self._hostname_status = {}
@@ -270,13 +269,21 @@ class DNSResolver(object):
         self._cb_to_hostname = {}
         self._cache = lru_cache.LRUCache(timeout=300)
         self._last_time = time.time()
-        self._sock = None
+        self.sock = None
         self._servers = None
         self._parse_resolv()
         self._parse_hosts()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                   socket.SOL_UDP)
+        self.sock.setblocking(False)
+        eventloop.SockManage.add(self, eventloop.POLL_IN)
         # TODO monitor hosts change and reload hosts
         # TODO parse /etc/gai.conf and follow its rules
-
+    @staticmethod
+    def instance():
+        if not DNSResolver._instance:
+            DNSResolver._instance = DNSResolver()
+        return DNSResolver._instance
     def _parse_resolv(self):
         self._servers = []
         try:
@@ -315,16 +322,6 @@ class DNSResolver(object):
         except IOError:
             self._hosts['localhost'] = '127.0.0.1'
 
-    def add_to_loop(self, loop):
-        if self._loop:
-            raise Exception('already add to loop')
-        self._loop = loop
-        # TODO when dns server is IPv6
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
-                                   socket.SOL_UDP)
-        self._sock.setblocking(False)
-        loop.add(self._sock, eventloop.POLL_IN)
-        loop.add_handler(self.handle_events)
 
     def _call_callback(self, hostname, ip, error=None):
         callbacks = self._hostname_to_cb.get(hostname, [])
@@ -360,26 +357,21 @@ class DNSResolver(object):
                     self._cache[hostname] = ip
                 self._call_callback(hostname, ip)
 
-    def handle_events(self, events):
-        for sock, fd, event in events:
-            if sock != self._sock:
-                continue
-            if event & eventloop.POLL_ERR:
-                logging.error('dns socket err')
-                self._loop.remove(self._sock)
-                self._sock.close()
-                # TODO when dns server is IPv6
-                self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
-                                           socket.SOL_UDP)
-                self._sock.setblocking(False)
-                self._loop.add(self._sock, eventloop.POLL_IN)
-            else:
-                data, addr = sock.recvfrom(1024)
-                if addr[0] not in self._servers:
-                    logging.warn('received a packet other than our dns')
-                    break
-                self._handle_data(data)
-            break
+    def handler(self,sock, fd, event):
+        if event & eventloop.POLL_ERR:
+            logging.error('dns socket err')
+            eventloop.SockManage.remove(self)
+            self.sock.close()
+            # TODO when dns server is IPv6
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
+                                       socket.SOL_UDP)
+            self.sock.setblocking(False)
+            eventloop.SockManage.add(self, eventloop.POLL_IN)
+        else:
+            data, addr = sock.recvfrom(1024)
+            if addr[0] not in self._servers:
+                logging.warn('received a packet other than our dns')
+            self._handle_data(data)
         now = time.time()
         if now - self._last_time > CACHE_SWEEP_INTERVAL:
             self._cache.sweep()
@@ -405,7 +397,7 @@ class DNSResolver(object):
         for server in self._servers:
             logging.debug('resolving %s with type %d using server %s',
                           hostname, qtype, server)
-            self._sock.sendto(req, (server, 53))
+            self.sock.sendto(req, (server, 53))
 
     def resolve(self, hostname, callback):
         if not hostname:
@@ -436,9 +428,9 @@ class DNSResolver(object):
                 self._send_req(hostname, QTYPE_A)
 
     def close(self):
-        if self._sock:
-            self._sock.close()
-            self._sock = None
+        if self.sock:
+            self.sock.close()
+            self.sock = None
 
 
 def test():
@@ -450,16 +442,13 @@ def test():
     def _callback(address, error):
         print error, address
 
-    loop = eventloop.EventLoop()
-    resolver = DNSResolver()
-    resolver.add_to_loop(loop)
 
     for hostname in [
                      'r4---sn-3qqp-ioql.googlevideo.com',
                      ]:
-        resolver.resolve(hostname, _callback)
+        DNSResolver.instance().resolve(hostname, _callback)
 
-    loop.run()
+    eventloop.SockManage.start()
 
 
 if __name__ == '__main__':

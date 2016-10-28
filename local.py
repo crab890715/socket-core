@@ -5,57 +5,12 @@ Created on 2016年10月22日
 @author: kingdee
 '''
 import eventloop, socket, errno, traceback, logging
-from macpath import join
 STEP_INIT = 0
 STEP_DESTROYED = -1
 
 BUF_SIZE = 32 * 1024
 
-
-class SockHandler(object):
-    sock = None
-    sock_type = None
-    def handler(self, sock, fd, event):
-        pass
-
-class  SockManage(object):
-    loop = eventloop.EventLoop()
-    @staticmethod
-    def start():
-        SockManage.loop.run()
-    @staticmethod
-    def remove(sock):
-        SockManage.loop.remove(sock)
-    @staticmethod
-    def add(sock, mode=eventloop.POLL_IN | eventloop.POLL_ERR):
-        SockManage.loop.add(sock, mode)
-        pass
-    @staticmethod
-    def modify(sock, mode=eventloop.POLL_IN | eventloop.POLL_ERR):
-        SockManage.loop.modify(sock, mode)
-class DNSResolver(SockHandler):
-    _this = None
-    def __init__(self):
-        self.sock_type = "resolver"
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
-                                   socket.SOL_UDP)
-        self.sock.setblocking(False)
-        SockManage.add(self, eventloop.POLL_IN | eventloop.POLL_ERR)
-        self._this = self
-    def handler(self, sock, fd, event):
-        data, addr = sock.recvfrom(1024)
-        print data
-        pass
-    def resolve(self, hostname, callback):
-        self.sock.sendto("test",("8.8.8.8",53))
-        self.sock.sendto("test",("8.8.4.4",53))
-        pass
-    @staticmethod
-    def instance():
-        if not DNSResolver._this :
-            DNSResolver._this = DNSResolver()
-        return DNSResolver._this
-class RemoteSockHandler(SockHandler):
+class RemoteSockHandler(eventloop.SockHandler):
     def __init__(self, data, local_sock_handler):
         self.local_sock_handler = local_sock_handler
         ip, port = self.parse_header(data)
@@ -79,7 +34,7 @@ class RemoteSockHandler(SockHandler):
                     errno.EINPROGRESS:
                 pass
         self.sock.sendall(data)
-        SockManage.add(self, eventloop.POLL_ERR | eventloop.POLL_OUT)
+        eventloop.SockManage.add(self, eventloop.POLL_ERR | eventloop.POLL_OUT)
     def parse_header(self, data):
         lines = data.splitlines()
         line = lines[1]
@@ -123,16 +78,16 @@ class RemoteSockHandler(SockHandler):
         else:
             print 'unknown socket'
     def destroy(self):
-        SockManage.remove(self)
+        eventloop.SockManage.remove(self)
         pass
-class LocalSockHandler(SockHandler):
+class LocalSockHandler(eventloop.SockHandler):
     def __init__(self, sock):
         sock.setblocking(False)
         sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
         self.sock = sock
         self.sock_type = "sock"
         self.data = [];
-        SockManage.add(self, eventloop.POLL_IN | eventloop.POLL_ERR)
+        eventloop.SockManage.add(self, eventloop.POLL_IN | eventloop.POLL_ERR)
         pass
     def _on_local_error(self):
         self.destroy()
@@ -169,9 +124,9 @@ class LocalSockHandler(SockHandler):
         else:
             print 'unknown socket'
     def destroy(self):
-        SockManage.remove(self)
+        eventloop.SockManage.remove(self)
         pass
-class LocalServerHandler(SockHandler):
+class LocalServerHandler(eventloop.SockHandler):
     def __init__(self, ip, port):
         addrs = socket.getaddrinfo(ip, port, 0,
                                    socket.SOCK_STREAM, socket.SOL_TCP)
@@ -207,6 +162,6 @@ if __name__ == '__main__':
 #     print "\x05\00"
 #     print ord("\x05")
     
-    SockManage.add(LocalServerHandler("127.0.0.1", 1080), eventloop.POLL_IN | eventloop.POLL_ERR)
-    SockManage.start()
+    eventloop.SockManage.add(LocalServerHandler("127.0.0.1", 1080), eventloop.POLL_IN | eventloop.POLL_ERR)
+    eventloop.SockManage.start()
     pass
